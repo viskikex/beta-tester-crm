@@ -7,6 +7,7 @@ import {
 } from "../lib/types";
 import FeedbackThread from "../components/FeedbackThread";
 import ScreenshotLink from "../components/ScreenshotLink";
+import { one } from "../lib/embed";
 
 // Admin triage: every submission, with status + tag editing and dedup merging.
 export default function AdminFeedbackPage() {
@@ -22,7 +23,12 @@ export default function AdminFeedbackPage() {
       .from("feedback")
       .select("*, submitter:profiles(email)")
       .order("created_at", { ascending: false });
-    setAll((data as Feedback[]) ?? []);
+    setAll(
+      ((data as Feedback[]) ?? []).map((f) => ({
+        ...f,
+        submitter: one(f.submitter),
+      }))
+    );
     setLoading(false);
   }
 
@@ -116,19 +122,15 @@ export default function AdminFeedbackPage() {
       setActionError("That target is itself merged. Pick a canonical submission.");
       return;
     }
-    // Merge id into target, and re-parent id's existing duplicates onto target in
-    // the same op so the dupe tree stays one level deep — otherwise those children
-    // would orphan under a now-non-canonical parent and vanish from the UI.
-    const { error } = await supabase
-      .from("feedback")
-      .update({ merged_into: targetId })
-      .eq("id", id);
-    const { error: reparentError } = await supabase
-      .from("feedback")
-      .update({ merged_into: targetId })
-      .eq("merged_into", id);
-    const failure = error ?? reparentError;
-    if (failure) setActionError(`Couldn't merge: ${failure.message}`);
+    // Single atomic RPC (migration 0010): it points id at target AND reparents
+    // id's existing duplicates onto target in one transaction, and re-checks
+    // admin + canonical-target server-side. The client guards above are just fast
+    // UX feedback; the RPC is the real enforcement and can't half-apply.
+    const { error } = await supabase.rpc("merge_feedback", {
+      src: id,
+      target: targetId,
+    });
+    if (error) setActionError(`Couldn't merge: ${error.message}`);
     load();
   }
 
@@ -169,7 +171,7 @@ export default function AdminFeedbackPage() {
         </div>
       </div>
 
-      {actionError && <p className="error">{actionError}</p>}
+      {actionError && <p className="error" role="alert">{actionError}</p>}
 
       {loading ? (
         <p className="muted">Loading…</p>
@@ -215,11 +217,21 @@ function FeedbackCard({
   const [tagDraft, setTagDraft] = useState(fb.tags.join(", "));
 
   function saveTags() {
-    const parsed = tagDraft
-      .split(",")
-      .map((t) => t.trim().toLowerCase())
-      .filter(Boolean);
-    onTags(fb.id, [...new Set(parsed)]);
+    const parsed = [
+      ...new Set(
+        tagDraft
+          .split(",")
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean)
+      ),
+    ];
+    // Enter (onKeyDown) and the blur it precedes (onBlur) both call this, so skip
+    // the write when nothing actually changed — otherwise it's two identical
+    // round-trips. Order-insensitive compare against the persisted tags.
+    const a = [...parsed].sort();
+    const b = [...fb.tags].sort();
+    if (a.length === b.length && a.every((t, i) => t === b[i])) return;
+    onTags(fb.id, parsed);
   }
 
   return (

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { TESTER_STATUSES, type Session, type TesterStatus } from "../lib/types";
+import { one } from "../lib/embed";
 
 type Counts = Record<TesterStatus, number>;
 
@@ -15,7 +16,10 @@ export default function DashboardPage() {
       const { data: testers } = await supabase.from("testers").select("status");
       const c: Counts = { prospect: 0, invited: 0, active: 0, inactive: 0 };
       (testers ?? []).forEach((t) => {
-        c[t.status as TesterStatus] += 1;
+        // Only count known statuses — a drifted/unexpected value would make
+        // c[status] NaN and poison the whole grid.
+        const s = t.status as TesterStatus;
+        if (TESTER_STATUSES.includes(s)) c[s] += 1;
       });
       setCounts(c);
 
@@ -25,7 +29,12 @@ export default function DashboardPage() {
         .eq("status", "scheduled")
         .order("scheduled_at", { ascending: true })
         .limit(5);
-      setUpcoming((sessions as Session[]) ?? []);
+      setUpcoming(
+        ((sessions as Session[]) ?? []).map((s) => ({
+          ...s,
+          tester: one(s.tester),
+        }))
+      );
 
       // Untriaged feedback waiting on you.
       const { count } = await supabase

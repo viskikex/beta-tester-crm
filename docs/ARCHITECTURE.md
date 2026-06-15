@@ -172,6 +172,12 @@ policies, so the two sets coexist without interfering.
 The client deliberately mirrors this: `MyFeedbackPage` only renders Edit/Delete while
 `status === 'new'`, so the buttons never offer an action the database would reject.
 
+This also clears a footgun from the original `0006` value-pin: a `status='new'` row that an
+admin already tagged (or pointed `merged_into` at) is **still editable and withdrawable by
+its submitter** — the trigger blocks only *changes* to the locked columns, and the edit
+form never sends them. Under the old `tags = '{}'` `WITH CHECK`, any such pre-tagged row
+silently became admin-only to touch; `0009` removed that.
+
 ### 4. Append-only comments
 
 `feedback_comments` has SELECT and INSERT policies and **no UPDATE/DELETE policy at
@@ -188,8 +194,10 @@ Screenshots live in a **private** `screenshots` bucket (`0008`). Objects are key
 `(storage.foldername(name))[1] = auth.uid()::text` — the storage equivalent of
 `owner = auth.uid()`. A tester writes/reads/deletes only under their own uid folder;
 admins may read everyone's (for triage). The feedback row stores only the **object
-path**; the app resolves a short-lived (300 s) **signed URL** at render time
-(`ScreenshotLink.tsx`). Nothing is publicly readable.
+path**; the app resolves a short-lived (300 s) **signed URL on click** —
+`ScreenshotLink.tsx` signs when the link is actually opened, not once per visible item
+on mount, so a long list isn't N eager round-trips and a stale-by-the-time-you-click URL
+never happens. Nothing is publicly readable.
 
 ### 6. Defense-in-depth against stored XSS
 
@@ -216,6 +224,27 @@ grants back only what's genuinely callable (`is_admin()` to `authenticated`;
 `handle_new_user()` to nobody — it fires only as a trigger). This clears the Supabase
 security-advisor warnings.
 
+### 8. Atomic duplicate-merge + value constraints
+
+Two boundary fixes that keep "the database is the source of truth" honest.
+
+**Merge** (`0010`). Pointing a duplicate at its canonical submission is two writes — set
+`source.merged_into = target`, then reparent the source's own duplicates onto `target` so
+the tree stays one level deep. Done as two separate API calls, a partial failure corrupts
+the tree (children yanked onto `target` while the source stays canonical, rows vanishing
+from the UI), and the canonical-target / no-cycle rules were client-side only. So merging
+is a single `SECURITY DEFINER` RPC, `merge_feedback(src, target)`: it re-checks
+`is_admin()`, rejects `src = target`, requires `target` to exist and be canonical (which
+also makes a cycle impossible given the one-level invariant), and does both updates in one
+function body — one transaction, all-or-nothing. `AdminFeedbackPage` calls
+`supabase.rpc('merge_feedback', …)`; the client guards remain only as fast UX.
+
+**Value constraints** (`0011`). `feedback.body` was `text not null`, so `''` and `'   '`
+passed a direct insert, nothing capped length, and `testers.email` was format-checked only
+in the form. `0011` adds `CHECK`s at the boundary — non-empty trimmed body, length caps on
+body/notes, email format — added `NOT VALID` so they enforce on every new write (including
+direct anon-key writes) without failing the migration on pre-existing rows.
+
 ### No in-app privilege escalation
 
 There is intentionally **no UPDATE policy on `profiles`**. `is_admin` can only be flipped
@@ -226,14 +255,22 @@ deploy-time decision, not a feature.
 
 ```
 AuthProvider (context/AuthContext.tsx)
-  ├─ supabase.auth.getSession() + onAuthStateChange  → session/user
+  ├─ supabase.auth.getSession() + onAuthStateChange  → session/user (+ authError)
   └─ on user change: select * from profiles where id = uid → profile, isAdmin
+                     (+ profileLoading, profileError)
 
 App.tsx route guards
   ├─ RequireAuth   → no user           → redirect /auth
   ├─ RequireAdmin  → user but !isAdmin  → redirect /my-feedback
   └─ Home          → isAdmin ? Dashboard : redirect /my-feedback
 ```
+
+The context keeps the *loading* signal separate from the *result*: `profile === null`
+means "no profile row," not "still loading" — `profileLoading` is the latter. Folding the
+two together (the original bug) meant a genuinely missing profile row, or an RLS/network
+error on the fetch, hung the app on a permanent spinner. Now `getSession()` failures set
+`authError`, the profile fetch surfaces `profileError`, and the guards render an actionable
+error with a Retry instead of spinning forever.
 
 The guards are **convenience, not security** — they decide what to render, but a
 determined user with the anon key can call PostgREST directly. That's fine, because RLS
@@ -266,17 +303,24 @@ history, so the SQL on disk matches what actually ran on the remote.
 | `0007_feedback_comments` | append-only reply thread | the "I feel heard" lever |
 | `0008_screenshot_storage` | private bucket, per-user folder RLS, `screenshot_path` | real uploads, no pasted URLs |
 | `0009_feedback_edit_column_lock` | trigger-enforced column immutability on UPDATE | fixes admin-tagging bricking a tester's edit (see §3) |
+| `0010_merge_feedback_rpc` | atomic `merge_feedback()` `SECURITY DEFINER` RPC | partial-failure-proof dedup, server-side admin/cycle checks (see §8) |
+| `0011_value_constraints` | non-empty/length/email `CHECK`s (`NOT VALID`) | validation at the boundary the docs claim (see §8) |
 
 ## Threat model & known limitations
 
 **What's defended.** Cross-tenant reads/writes (RLS on every table + Storage), privilege
 escalation via INSERT/UPDATE column-stuffing (pinned `WITH CHECK`), stored XSS through
-`screenshot_url` (client + server), `SECURITY DEFINER` search-path hijack, and in-app
-self-promotion to admin (no `profiles` UPDATE policy).
+`screenshot_url` (client + server), `SECURITY DEFINER` search-path hijack, in-app
+self-promotion to admin (no `profiles` UPDATE policy), dedup-tree corruption from a
+half-applied merge (atomic RPC, `0010`), and malformed/oversized input via direct API
+writes (`CHECK` constraints, `0011`).
 
 **Known gaps.**
-- Deleting a feedback row does **not** purge its Storage object — the screenshot is
-  orphaned in the bucket (cleanup would want a trigger or an Edge Function).
+- Storage cleanup is **client-side best-effort**: a tester's edit/replace/withdraw purges
+  the superseded object (they own their folder per `0008`), but a failed cleanup call, or
+  a future admin-initiated delete (no such UI today — admins would need a storage-delete
+  policy), could still orphan an object. A trigger or Edge Function sweep would make it
+  belt-and-suspenders.
 - Tag filtering is client-side, so the triage view fetches all visible rows and filters
   in memory; fine at demo scale, not at thousands of rows.
 - No realtime — the triage board reflects submissions on reload, not live.

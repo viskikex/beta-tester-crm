@@ -10,28 +10,47 @@ import AuthPage from "./pages/AuthPage";
 import { useAuth } from "./context/AuthContext";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
-  const { user, loading } = useAuth();
+  const { user, loading, authError } = useAuth();
   if (loading) return <p className="muted">Loading…</p>;
+  if (authError) return <SessionError message={authError} />;
   if (!user) return <Navigate to="/auth" replace />;
   return children;
 }
 
 // Admin-only. Non-admins get bounced to their feedback page.
 function RequireAdmin({ children }: { children: JSX.Element }) {
-  const { user, isAdmin, loading, profile } = useAuth();
+  const { user, isAdmin, loading, authError, profileLoading, profileError } =
+    useAuth();
   if (loading) return <p className="muted">Loading…</p>;
+  if (authError) return <SessionError message={authError} />;
   if (!user) return <Navigate to="/auth" replace />;
-  // profile may still be loading on first paint after auth resolves
-  if (profile === null) return <p className="muted">Loading…</p>;
+  // profileLoading (not profile===null) is the real "still loading" signal —
+  // a genuinely missing profile row must resolve to an error, not a spinner.
+  if (profileLoading) return <p className="muted">Loading…</p>;
+  if (profileError) return <SessionError message={profileError} />;
   if (!isAdmin) return <Navigate to="/my-feedback" replace />;
   return children;
 }
 
 // Home routes admins to the dashboard, testers to their feedback.
 function Home() {
-  const { isAdmin, profile } = useAuth();
-  if (profile === null) return <p className="muted">Loading…</p>;
+  const { isAdmin, profileLoading, profileError } = useAuth();
+  if (profileLoading) return <p className="muted">Loading…</p>;
+  if (profileError) return <SessionError message={profileError} />;
   return isAdmin ? <DashboardPage /> : <Navigate to="/my-feedback" replace />;
+}
+
+// Shown when the session or profile can't be resolved — replaces the old
+// permanent spinner so the user gets an actionable message, not a hang.
+function SessionError({ message }: { message: string }) {
+  return (
+    <div role="alert" className="error">
+      <p>Couldn't load your account: {message}</p>
+      <button type="button" onClick={() => window.location.reload()}>
+        Retry
+      </button>
+    </div>
+  );
 }
 
 export default function App() {

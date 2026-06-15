@@ -21,34 +21,59 @@ export default function AuthPage() {
     setBusy(true);
     setMessage(null);
 
-    const { error } =
+    const { data, error } =
       mode === "signin"
         ? await supabase.auth.signInWithPassword({ email, password })
         : await supabase.auth.signUp({ email, password });
 
     setBusy(false);
 
-    if (error) setMessage(error.message);
-    else if (mode === "signup") setMessage("Check your email to confirm, then sign in.");
-    else navigate("/");
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    if (mode === "signin") {
+      navigate("/");
+      return;
+    }
+    // Signup: only tell people to check their email when confirmation is actually
+    // required. If the project has email confirmation off, signUp returns a live
+    // session and they're already in — sending them to "check your email" would
+    // strand them.
+    if (data.session) navigate("/");
+    else setMessage("Account created. Check your email to confirm, then sign in.");
   }
 
   return (
     <section className="form-page narrow">
       <h1>{mode === "signin" ? "Sign in" : "Create an account"}</h1>
       <p className="muted">Manage your beta tester program.</p>
-      {message && <p className="notice">{message}</p>}
+      {message && (
+        <p className="notice" role="alert">
+          {message}
+        </p>
+      )}
       <form onSubmit={handleSubmit} className="stack">
         <label>
           Email
-          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
         </label>
         <label>
           Password
           <input
             type="password"
             required
-            minLength={6}
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            // Only enforce a minimum when creating a password; on sign-in the
+            // password already exists, so a client minLength just risks blocking
+            // a valid (older, shorter) one.
+            minLength={mode === "signup" ? 6 : undefined}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />

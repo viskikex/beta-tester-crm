@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { randomId, safeExt } from "./objectPath";
 
 const BUCKET = "screenshots";
 const MAX_BYTES = 5 * 1024 * 1024; // mirror the bucket's file_size_limit (0008)
@@ -11,12 +12,20 @@ export async function uploadScreenshot(userId: string, file: File): Promise<stri
   if (file.size > MAX_BYTES) {
     throw new Error("Screenshot is larger than 5 MB.");
   }
-  const ext = file.name.includes(".") ? file.name.split(".").pop() : "png";
-  const path = `${userId}/${crypto.randomUUID()}.${ext}`;
+  const path = `${userId}/${randomId()}.${safeExt(file)}`;
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
     upsert: false,
     contentType: file.type || undefined,
   });
   if (error) throw error;
   return path;
+}
+
+// Remove a screenshot object. Testers may delete within their own uid folder
+// (migration 0008), so this works for cleaning up a tester's own superseded or
+// withdrawn screenshots. Used best-effort by callers — a failed cleanup orphans
+// an object but must not fail the user's actual action.
+export async function removeScreenshot(path: string): Promise<void> {
+  const { error } = await supabase.storage.from(BUCKET).remove([path]);
+  if (error) throw error;
 }

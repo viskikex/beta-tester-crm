@@ -124,7 +124,7 @@ function ScheduleSessionForm({
           Schedule
         </button>
       </form>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
     </>
   );
 }
@@ -136,21 +136,43 @@ function SessionStatusControl({
   session: Session;
   onChanged: () => void;
 }) {
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function change(status: string) {
+    setError(null);
+    setSaving(true);
+    const { error } = await supabase
+      .from("sessions")
+      .update({ status })
+      .eq("id", session.id);
+    setSaving(false);
+    if (error) {
+      // Don't reload() on failure — that would silently snap the select back to
+      // the old value and hide that nothing was saved. Surface it instead.
+      setError(`Couldn't update session: ${error.message}`);
+      return;
+    }
+    onChanged();
+  }
+
   return (
-    <select
-      value={session.status}
-      onChange={async (e) => {
-        await supabase
-          .from("sessions")
-          .update({ status: e.target.value })
-          .eq("id", session.id);
-        onChanged();
-      }}
-    >
-      <option value="scheduled">scheduled</option>
-      <option value="completed">completed</option>
-      <option value="no_show">no_show</option>
-      <option value="canceled">canceled</option>
-    </select>
+    <>
+      <select
+        value={session.status}
+        disabled={saving}
+        onChange={(e) => change(e.target.value)}
+      >
+        <option value="scheduled">scheduled</option>
+        <option value="completed">completed</option>
+        <option value="no_show">no_show</option>
+        <option value="canceled">canceled</option>
+      </select>
+      {error && (
+        <span role="alert" className="error small">
+          {error}
+        </span>
+      )}
+    </>
   );
 }

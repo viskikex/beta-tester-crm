@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { FEEDBACK_TYPES, type Feedback, type FeedbackType } from "../lib/types";
-import { uploadScreenshot } from "../lib/uploadScreenshot";
+import { uploadScreenshot, removeScreenshot } from "../lib/uploadScreenshot";
 import FeedbackThread from "../components/FeedbackThread";
 import ScreenshotLink from "../components/ScreenshotLink";
 
@@ -71,11 +71,15 @@ export default function MyFeedbackPage() {
   async function remove(id: string) {
     if (!window.confirm("Delete this feedback? This can't be undone.")) return;
     setActionError(null);
+    // Grab the object path before the row is gone — the delete doesn't cascade to
+    // storage, so we purge it ourselves afterward.
+    const screenshotPath = items.find((f) => f.id === id)?.screenshot_path ?? null;
     const { error } = await supabase.from("feedback").delete().eq("id", id);
     if (error) {
       setActionError(`Couldn't delete: ${error.message}`);
       return;
     }
+    if (screenshotPath) await removeScreenshot(screenshotPath).catch(() => {});
     load();
   }
 
@@ -87,7 +91,7 @@ export default function MyFeedbackPage() {
         status update here as we triage it.
       </p>
 
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       <form onSubmit={submit} className="inline-form">
         <div className="row">
           <label className="grow">
@@ -104,6 +108,7 @@ export default function MyFeedbackPage() {
         <textarea
           rows={4}
           required
+          maxLength={10000}
           placeholder="What happened? What did you expect?"
           value={body}
           onChange={(e) => setBody(e.target.value)}
@@ -123,7 +128,7 @@ export default function MyFeedbackPage() {
       </form>
 
       <h2>Your submissions</h2>
-      {actionError && <p className="error">{actionError}</p>}
+      {actionError && <p className="error" role="alert">{actionError}</p>}
       {loading ? (
         <p className="muted">Loading…</p>
       ) : items.length === 0 ? (
@@ -178,8 +183,10 @@ function SubmissionItem({
     setSaving(true);
     setError(null);
     try {
+      const oldPath = fb.screenshot_path;
       let screenshot_path = fb.screenshot_path;
       let screenshot_url = fb.screenshot_url;
+      let uploadedPath: string | null = null;
       if (removeShot) {
         screenshot_path = null;
         screenshot_url = null;
@@ -187,13 +194,22 @@ function SubmissionItem({
       if (file) {
         // New upload supersedes any legacy URL on this row.
         screenshot_path = await uploadScreenshot(fb.submitted_by, file);
+        uploadedPath = screenshot_path;
         screenshot_url = null;
       }
       const { error } = await supabase
         .from("feedback")
         .update({ type, body: body.trim(), screenshot_path, screenshot_url })
         .eq("id", fb.id);
-      if (error) throw error;
+      if (error) {
+        // Roll back a just-uploaded object so a failed save doesn't orphan it.
+        if (uploadedPath) await removeScreenshot(uploadedPath).catch(() => {});
+        throw error;
+      }
+      // Drop the superseded object once the row no longer references it.
+      if (oldPath && oldPath !== screenshot_path) {
+        await removeScreenshot(oldPath).catch(() => {});
+      }
       setEditing(false);
       onChanged();
     } catch (err) {
@@ -206,7 +222,7 @@ function SubmissionItem({
   if (editing) {
     return (
       <li>
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
         <form onSubmit={save} className="inline-form">
           <div className="row">
             <label className="grow">
@@ -223,6 +239,7 @@ function SubmissionItem({
           <textarea
             rows={4}
             required
+            maxLength={10000}
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />

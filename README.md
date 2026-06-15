@@ -33,6 +33,13 @@ Security model (the headline — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.
   constraint so the rule survives a direct anon-key write (`0004`).
 - **`SECURITY DEFINER` hardening** — pinned `search_path` + `REVOKE EXECUTE … FROM PUBLIC`
   on every helper, clearing the Supabase security-advisor warnings (`0003`).
+- **Atomic, server-enforced merge** — duplicate-merging is one `SECURITY DEFINER` RPC
+  (`0010`) that re-checks admin + canonical-target and does both writes in a single
+  transaction, so a partial failure can't corrupt the dedup tree (and the no-cycle rule
+  isn't just client-side).
+- **Validation at the DB boundary** — non-empty, length-capped feedback bodies and an
+  email-format check live as `CHECK` constraints (`0011`), so "integrity is the database's
+  job" holds against a direct anon-key write, not only the React forms.
 
 Platform features:
 
@@ -55,7 +62,7 @@ Vite + React 18 + TypeScript, `@supabase/supabase-js`, `react-router-dom`. Plain
 ## Setup
 
 1. **Create a Supabase project** at [supabase.com](https://supabase.com).
-2. **Run the migrations in order** (`0001` → `0009`), in the SQL Editor:
+2. **Run the migrations in order** (`0001` → `0011`), in the SQL Editor:
    - `0001_init.sql` — testers + sessions
    - `0002_feedback_portal.sql` — profiles, roles, feedback
    - `0003_harden_functions.sql` — `search_path` + EXECUTE hardening
@@ -65,7 +72,10 @@ Vite + React 18 + TypeScript, `@supabase/supabase-js`, `react-router-dom`. Plain
    - `0007_feedback_comments.sql` — the reply thread (append-only)
    - `0008_screenshot_storage.sql` — private `screenshots` bucket + per-user upload RLS
    - `0009_feedback_edit_column_lock.sql` — trigger so admin-tagging a `new` item can't brick a tester's edit
+   - `0010_merge_feedback_rpc.sql` — `SECURITY DEFINER` RPC that merges duplicates atomically
+   - `0011_value_constraints.sql` — server-side value `CHECK`s (non-empty/length-capped body, email format)
    > `0004` will fail if a row already holds a non-http `screenshot_url` — clean those first.
+   > `0010` is required for duplicate-merging — the triage UI calls it via `supabase.rpc('merge_feedback')`, so merge errors until this is applied.
 3. **Env vars:** `cp .env.example .env`, then fill in URL + anon key (Settings → API).
 4. **Run it:**
    ```bash
@@ -98,6 +108,18 @@ Vite + React 18 + TypeScript, `@supabase/supabase-js`, `react-router-dom`. Plain
 
 For the full data model and the layered RLS story, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+## Tests
+
+Two layers, matching the two halves of the app:
+
+- **Unit (frontend):** `npm test` (vitest) covers the pure boundary helpers — the `http(s)` URL allowlist, the storage-path extension sanitizer + id generator, and the PostgREST embed-shape coercion.
+- **RLS / policy (database):** [`supabase/tests/rls_smoke.sql`](supabase/tests/rls_smoke.sql) asserts the access-rule invariants from [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) *directly against Postgres* — a tester sees only their own feedback, can't submit a pre-triaged row or self-promote one, can't merge or flip `is_admin`, anon sees nothing, and the value constraints hold. It simulates signed-in users via `request.jwt.claims` + `SET ROLE`, runs inside a transaction that **rolls back** (persists nothing), and emits only PASS/FAIL (no PII). Run it against a **dev** project:
+
+  ```bash
+  psql "$DATABASE_URL" -f supabase/tests/rls_smoke.sql
+  # …or paste it into the Supabase SQL Editor and Run.
+  ```
+
 ## Ideas to extend
 
 - Realtime on `feedback` so the triage board updates live as testers submit.
@@ -105,4 +127,3 @@ For the full data model and the layered RLS story, see [`docs/ARCHITECTURE.md`](
 - An LLM pass to auto-suggest tags from the body (the "AI-assisted" part of the JD).
 - Tie a feedback item back to a CRM `tester` record when emails match.
 - Server-side tag filtering via `.contains()` once the GIN index earns its keep.
-- Purge the Storage object when a feedback row is deleted (today it's orphaned).

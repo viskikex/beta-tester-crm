@@ -2,6 +2,7 @@ import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import type { FeedbackComment } from "../lib/types";
+import { one } from "../lib/embed";
 
 // A two-way reply thread on one feedback item, shared by the tester and admin
 // views. RLS (migration 0007) guarantees you only ever load/post on a thread you
@@ -27,7 +28,12 @@ export default function FeedbackThread({ feedbackId }: { feedbackId: string }) {
       setError(error.message);
       return;
     }
-    setComments((data as FeedbackComment[]) ?? []);
+    setComments(
+      ((data as FeedbackComment[]) ?? []).map((c) => ({
+        ...c,
+        author_profile: one(c.author_profile),
+      }))
+    );
     setLoaded(true);
   }
 
@@ -64,7 +70,7 @@ export default function FeedbackThread({ feedbackId }: { feedbackId: string }) {
 
       {open && (
         <div className="thread-body">
-          {error && <p className="error">{error}</p>}
+          {error && <p className="error" role="alert">{error}</p>}
           {!loaded ? (
             <p className="muted small">Loading…</p>
           ) : comments.length === 0 ? (
@@ -89,6 +95,7 @@ export default function FeedbackThread({ feedbackId }: { feedbackId: string }) {
             <input
               className="grow"
               placeholder="Write a reply…"
+              maxLength={10000}
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />
