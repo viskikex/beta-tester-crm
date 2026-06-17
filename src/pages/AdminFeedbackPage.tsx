@@ -17,13 +17,20 @@ export default function AdminFeedbackPage() {
   const [tagFilter, setTagFilter] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [allTags, setAllTags] = useState<string[]>([]);
 
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase
+    let query = supabase
       .from("feedback")
       .select("*, submitter:profiles(email)")
       .order("created_at", { ascending: false });
+    // Filters run at the database. The tag filter goes through the GIN index on
+    // feedback.tags via .contains() (tags @> ARRAY[tag]) rather than being applied
+    // in the browser — so triage scales past what's comfortable to ship to the client.
+    if (statusFilter) query = query.eq("status", statusFilter);
+    if (tagFilter) query = query.contains("tags", [tagFilter]);
+    const { data, error } = await query;
     if (error) {
       setLoadError(error.message);
       setAll([]);
@@ -39,8 +46,24 @@ export default function AdminFeedbackPage() {
     setLoading(false);
   }
 
+  // Re-query when a filter changes — the narrowing happens server-side.
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, tagFilter]);
+
+  // Tag vocabulary for the filter dropdown — fetched once and kept stable, so
+  // picking a tag (which narrows the feedback query) doesn't also shrink the set
+  // of tags you can choose from.
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("feedback").select("tags");
+      const s = new Set<string>();
+      ((data as { tags: string[] }[]) ?? []).forEach((r) =>
+        r.tags?.forEach((t) => s.add(t))
+      );
+      setAllTags([...s].sort());
+    })();
   }, []);
 
   // Group merged duplicates under their canonical submission.
@@ -55,19 +78,9 @@ export default function AdminFeedbackPage() {
     return m;
   }, [all]);
 
-  const allTags = useMemo(() => {
-    const s = new Set<string>();
-    all.forEach((f) => f.tags.forEach((t) => s.add(t)));
-    return [...s].sort();
-  }, [all]);
-
-  // Canonical (non-merged) submissions, after filters.
-  const canonical = useMemo(() => {
-    return all
-      .filter((f) => !f.merged_into)
-      .filter((f) => !statusFilter || f.status === statusFilter)
-      .filter((f) => !tagFilter || f.tags.includes(tagFilter));
-  }, [all, statusFilter, tagFilter]);
+  // Canonical (non-merged) submissions. Status/tag narrowing now happens in the
+  // query (see load), so this just hides merged duplicates from the top level.
+  const canonical = useMemo(() => all.filter((f) => !f.merged_into), [all]);
 
   // candidate merge targets = other canonical submissions
   const mergeTargets = useMemo(

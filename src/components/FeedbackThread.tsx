@@ -10,7 +10,7 @@ import { one } from "../lib/embed";
 // default and fetched on first open, so a long list of items isn't N eager
 // queries on mount.
 export default function FeedbackThread({ feedbackId }: { feedbackId: string }) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [comments, setComments] = useState<FeedbackComment[]>([]);
@@ -80,9 +80,18 @@ export default function FeedbackThread({ feedbackId }: { feedbackId: string }) {
               {comments.map((c) => (
                 <li key={c.id} className="thread-item">
                   <div className="muted small">
+                    {/* A tester can't read staff's profile (profiles RLS), so the
+                        embedded email is null for an admin's reply. But 0007 lets
+                        only the submitter + admins post on a thread, so any author
+                        that isn't you, on your own thread, is necessarily staff —
+                        label it "Beta team" rather than leak an email or show
+                        "unknown". Admins, who can read all profiles, see the real
+                        author. */}
                     {c.author === user?.id
                       ? "you"
-                      : c.author_profile?.email ?? "unknown"}{" "}
+                      : isAdmin
+                        ? c.author_profile?.email ?? "unknown"
+                        : "Beta team"}{" "}
                     · {new Date(c.created_at).toLocaleString()}
                   </div>
                   <div>{c.body}</div>
