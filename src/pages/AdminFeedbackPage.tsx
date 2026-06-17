@@ -16,19 +16,26 @@ export default function AdminFeedbackPage() {
   const [statusFilter, setStatusFilter] = useState<"" | FeedbackStatus>("");
   const [tagFilter, setTagFilter] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("feedback")
       .select("*, submitter:profiles(email)")
       .order("created_at", { ascending: false });
-    setAll(
-      ((data as Feedback[]) ?? []).map((f) => ({
-        ...f,
-        submitter: one(f.submitter),
-      }))
-    );
+    if (error) {
+      setLoadError(error.message);
+      setAll([]);
+    } else {
+      setLoadError(null);
+      setAll(
+        ((data as Feedback[]) ?? []).map((f) => ({
+          ...f,
+          submitter: one(f.submitter),
+        }))
+      );
+    }
     setLoading(false);
   }
 
@@ -172,10 +179,13 @@ export default function AdminFeedbackPage() {
       </div>
 
       {actionError && <p className="error" role="alert">{actionError}</p>}
+      {loadError && (
+        <p className="error" role="alert">Couldn't load feedback: {loadError}</p>
+      )}
 
       {loading ? (
         <p className="muted">Loading…</p>
-      ) : canonical.length === 0 ? (
+      ) : loadError ? null : canonical.length === 0 ? (
         <p className="muted">No submissions match.</p>
       ) : (
         <ul className="plain-list">

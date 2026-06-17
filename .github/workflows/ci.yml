@@ -1,0 +1,89 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # ── Frontend: the certain-green half (this runs locally clean already). ──
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  # ── RLS: apply the migrations to a REAL Supabase Postgres and assert the ──
+  #    access-rule invariants hold at the database. This is the headline.
+  rls:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Pinned to a real published tag (multi-arch). This image ships the
+        # auth/storage schemas, the anon/authenticated/service_role roles, and
+        # auth.uid() — which migrations 0002/0008 and rls_smoke.sql all depend on.
+        image: supabase/postgres:15.14.1.136
+        env:
+          POSTGRES_PASSWORD: postgres
+          # The image demotes `postgres` to NOSUPERUSER (prod-parity) and owns the
+          # auth/storage schemas as `supabase_admin`. We need that superuser to
+          # create storage.* and to SET ROLE in the smoke test; trust auth lets us
+          # connect as it without a password (which non-super postgres can't set).
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 40s
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: supabase_admin
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for Postgres to accept connections
+        run: |
+          for i in $(seq 1 40); do
+            if pg_isready -q; then echo "postgres ready"; exit 0; fi
+            echo "waiting for postgres ($i)…"; sleep 3
+          done
+          echo "postgres never became ready"; exit 1
+
+      - name: CI bootstrap (storage schema + auth.uid/role pin)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/ci/00_bootstrap.sql
+
+      - name: Apply migrations in order
+        run: |
+          for f in supabase/migrations/*.sql; do
+            echo "== applying $f =="
+            psql -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Grant table privileges (the hosted-platform contract)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/ci/01_grants.sql
+
+      - name: Seed an admin + a tester
+        run: psql -v ON_ERROR_STOP=1 -f supabase/ci/02_seed.sql
+
+      - name: Run the RLS smoke test
+        run: |
+          # Stream psql output to the log (don't capture it in a var — under
+          # `set -e` a failing command substitution aborts before we could echo
+          # it). pipefail surfaces a psql RAISE as a step failure; the grep is a
+          # belt-and-suspenders on the success line.
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/tests/rls_smoke.sql 2>&1 | tee smoke.log
+          grep -q "rls_smoke: ALL PASS" smoke.log

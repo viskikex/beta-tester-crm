@@ -1,5 +1,7 @@
 # Beta Tester CRM + Feedback Portal
 
+[![CI](https://github.com/viskikex/beta-tester-crm/actions/workflows/ci.yml/badge.svg)](https://github.com/viskikex/beta-tester-crm/actions/workflows/ci.yml)
+
 Two tools in one app, gated by role:
 
 - **Admin (program manager)** — recruit testers, move them through a pipeline,
@@ -119,6 +121,8 @@ Two layers, matching the two halves of the app:
   psql "$DATABASE_URL" -f supabase/tests/rls_smoke.sql
   # …or paste it into the Supabase SQL Editor and Run.
   ```
+
+- **Both, in CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the unit tests + build, then stands up the real `supabase/postgres` image, applies all 11 migrations in order, seeds an admin + a tester, and runs `rls_smoke.sql` against it — **on every push**. So the eight access-rule invariants above are proven green on each commit, not just claimed. The CI-only database setup (the storage schema, role grants, and seed that a hosted Supabase project provides but the bare image doesn't) lives in [`supabase/ci/`](supabase/ci/).
 
 ## Ideas to extend
 

@@ -10,16 +10,23 @@ export default function TestersPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [highlighted, setHighlighted] = useState<TesterStatus | null>(null);
   const location = useLocation();
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("testers")
       .select("*")
       .order("created_at", { ascending: false });
-    setTesters((data as Tester[]) ?? []);
+    if (error) {
+      setLoadError(error.message);
+      setTesters([]);
+    } else {
+      setLoadError(null);
+      setTesters((data as Tester[]) ?? []);
+    }
     setLoading(false);
   }
 
@@ -70,6 +77,9 @@ export default function TestersPage() {
       </div>
 
       {actionError && <p className="error">{actionError}</p>}
+      {loadError && (
+        <p className="error" role="alert">Couldn't load testers: {loadError}</p>
+      )}
 
       {showForm && user && (
         <AddTesterForm

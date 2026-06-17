@@ -10,12 +10,37 @@ export default function DashboardPage() {
   const [counts, setCounts] = useState<Counts | null>(null);
   const [upcoming, setUpcoming] = useState<Session[]>([]);
   const [newFeedback, setNewFeedback] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function run() {
-      const { data: testers } = await supabase.from("testers").select("status");
+      // Independent reads: fire them together instead of three sequential
+      // round-trips, and surface the first error rather than silently rendering
+      // zeros (which reads identically to a genuinely empty program).
+      const [testersRes, sessionsRes, feedbackRes] = await Promise.all([
+        supabase.from("testers").select("status"),
+        supabase
+          .from("sessions")
+          .select("*, tester:testers(id,name)")
+          .eq("status", "scheduled")
+          .order("scheduled_at", { ascending: true })
+          .limit(5),
+        supabase
+          .from("feedback")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "new")
+          .is("merged_into", null),
+      ]);
+
+      setError(
+        testersRes.error?.message ??
+          sessionsRes.error?.message ??
+          feedbackRes.error?.message ??
+          null
+      );
+
       const c: Counts = { prospect: 0, invited: 0, active: 0, inactive: 0 };
-      (testers ?? []).forEach((t) => {
+      (testersRes.data ?? []).forEach((t) => {
         // Only count known statuses — a drifted/unexpected value would make
         // c[status] NaN and poison the whole grid.
         const s = t.status as TesterStatus;
@@ -23,26 +48,14 @@ export default function DashboardPage() {
       });
       setCounts(c);
 
-      const { data: sessions } = await supabase
-        .from("sessions")
-        .select("*, tester:testers(id,name)")
-        .eq("status", "scheduled")
-        .order("scheduled_at", { ascending: true })
-        .limit(5);
       setUpcoming(
-        ((sessions as Session[]) ?? []).map((s) => ({
+        ((sessionsRes.data as Session[]) ?? []).map((s) => ({
           ...s,
           tester: one(s.tester),
         }))
       );
 
-      // Untriaged feedback waiting on you.
-      const { count } = await supabase
-        .from("feedback")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "new")
-        .is("merged_into", null);
-      setNewFeedback(count ?? 0);
+      setNewFeedback(feedbackRes.count ?? 0);
     }
     run();
   }, []);
@@ -50,6 +63,9 @@ export default function DashboardPage() {
   return (
     <section>
       <h1>Program overview</h1>
+      {error && (
+        <p className="error" role="alert">Couldn't load the dashboard: {error}</p>
+      )}
 
       <div className="stat-grid">
         {TESTER_STATUSES.map((s) => (

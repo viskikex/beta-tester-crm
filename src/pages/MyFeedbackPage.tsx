@@ -22,16 +22,23 @@ export default function MyFeedbackPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
 
   async function load() {
     if (!user) return;
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("feedback")
       .select("*")
       .eq("submitted_by", user.id)
       .order("created_at", { ascending: false });
-    setItems((data as Feedback[]) ?? []);
+    if (error) {
+      setListError(error.message);
+      setItems([]);
+    } else {
+      setListError(null);
+      setItems((data as Feedback[]) ?? []);
+    }
     setLoading(false);
   }
 
@@ -129,9 +136,12 @@ export default function MyFeedbackPage() {
 
       <h2>Your submissions</h2>
       {actionError && <p className="error" role="alert">{actionError}</p>}
+      {listError && (
+        <p className="error" role="alert">Couldn't load your submissions: {listError}</p>
+      )}
       {loading ? (
         <p className="muted">Loading…</p>
-      ) : items.length === 0 ? (
+      ) : listError ? null : items.length === 0 ? (
         <p className="muted">Nothing yet.</p>
       ) : (
         <ul className="plain-list">
