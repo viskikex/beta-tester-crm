@@ -67,8 +67,8 @@ allowed values live in plain SQL and are mirrored in `src/lib/types.ts`:
 - `feedback.type` → `bug · confusion · request`
 - `feedback.status` → `new · triaged · planned · shipped · declined`
 
-`feedback.tags` is a `text[]` with a GIN index (`feedback_tags_idx`) ready for
-`.contains()` queries; the triage view currently filters tags client-side.
+`feedback.tags` is a `text[]` with a GIN index (`feedback_tags_idx`); the triage tag
+filter queries it server-side via `.contains()` rather than filtering in the browser.
 `feedback.merged_into` is a self-referential FK used for duplicate-merging during triage.
 
 ## The security model
@@ -321,8 +321,12 @@ writes (`CHECK` constraints, `0011`).
   a future admin-initiated delete (no such UI today — admins would need a storage-delete
   policy), could still orphan an object. A trigger or Edge Function sweep would make it
   belt-and-suspenders.
-- Tag filtering is client-side, so the triage view fetches all visible rows and filters
-  in memory; fine at demo scale, not at thousands of rows.
+- No pagination: the list views (`select("*")` on triage / testers / own-feedback) fetch
+  all visible rows. The server-side status/tag filters narrow the set, but an unfiltered
+  triage view still pulls everything — fine at demo scale, not at thousands of rows.
+- Concurrent admin edits are last-write-wins: the optimistic-update rollback guards a single
+  admin's own in-flight races, but there's no `updated_at` precondition, so two admins
+  editing the same row won't detect the conflict.
 - No realtime — the triage board reflects submissions on reload, not live.
 - Email confirmation is typically turned off for local hacking; turn it back on for any
   real deployment.

@@ -52,8 +52,9 @@ Platform features:
   and viewers get a short-lived **signed URL** (`0008`, `ScreenshotLink.tsx`).
 - **Append-only comment threads** — a two-way reply thread on each feedback item, with
   *no* UPDATE/DELETE policy so the triage conversation is an honest record (`0007`).
-- **Postgres arrays + GIN index** — `tags text[]` with a GIN index ready for `.contains()`
-  (tag filtering is currently done client-side in the triage view).
+- **Postgres arrays + GIN index** — `tags text[]` with a GIN index (`feedback_tags_idx`);
+  the triage tag filter runs server-side through it via `.contains()` (`tags @> ARRAY[tag]`),
+  so narrowing the board doesn't ship the whole table to the browser.
 - **A pipeline UI**, optimistic updates with rollback-on-error, and client-side aggregation
   for the dashboard.
 
@@ -130,4 +131,8 @@ Two layers, matching the two halves of the app:
 - Email the submitter when their item ships (Edge Function on status change).
 - An LLM pass to auto-suggest tags from the body (the "AI-assisted" part of the JD).
 - Tie a feedback item back to a CRM `tester` record when emails match.
-- Server-side tag filtering via `.contains()` once the GIN index earns its keep.
+- Pagination / "load more" on the triage and tester lists (today they fetch all visible rows).
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).

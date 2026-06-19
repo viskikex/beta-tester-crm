@@ -10,10 +10,12 @@ export default function TesterDetailPage() {
   const [tester, setTester] = useState<Tester | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   async function load() {
     if (!id) return;
-    const [{ data: t }, { data: s }] = await Promise.all([
+    setLoading(true);
+    const [{ data: t, error: tErr }, { data: s, error: sErr }] = await Promise.all([
       supabase.from("testers").select("*").eq("id", id).maybeSingle(),
       supabase
         .from("sessions")
@@ -21,6 +23,14 @@ export default function TesterDetailPage() {
         .eq("tester_id", id)
         .order("scheduled_at", { ascending: false }),
     ]);
+    // Surface a fetch failure instead of letting it read as "Tester not found" —
+    // an RLS/network error and a genuinely missing row are different states.
+    if (tErr || sErr) {
+      setError(tErr?.message ?? sErr?.message ?? "Failed to load.");
+      setLoading(false);
+      return;
+    }
+    setError(null);
     setTester((t as Tester) ?? null);
     setSessions((s as Session[]) ?? []);
     setLoading(false);
@@ -32,6 +42,12 @@ export default function TesterDetailPage() {
   }, [id]);
 
   if (loading) return <p className="muted">Loading…</p>;
+  if (error)
+    return (
+      <p className="error" role="alert">
+        Couldn't load this tester: {error} <Link to="/testers">Back</Link>
+      </p>
+    );
   if (!tester)
     return (
       <p className="muted">
