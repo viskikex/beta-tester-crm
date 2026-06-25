@@ -116,6 +116,7 @@ export default function MyFeedbackPage() {
           rows={4}
           required
           maxLength={10000}
+          aria-label="Feedback details"
           placeholder="What happened? What did you expect?"
           value={body}
           onChange={(e) => setBody(e.target.value)}
@@ -250,6 +251,7 @@ function SubmissionItem({
             rows={4}
             required
             maxLength={10000}
+            aria-label="Edit feedback details"
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />

@@ -170,6 +170,7 @@ export default function AdminFeedbackPage() {
         <h1>Feedback triage</h1>
         <div className="row tight">
           <select
+            aria-label="Filter by status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
           >
@@ -180,7 +181,11 @@ export default function AdminFeedbackPage() {
               </option>
             ))}
           </select>
-          <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
+          <select
+            aria-label="Filter by tag"
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+          >
             <option value="">all tags</option>
             {allTags.map((t) => (
               <option key={t} value={t}>
@@ -302,6 +307,7 @@ function FeedbackCard({
 
         <span className="tag-editor">
           <input
+            aria-label="Tags, comma separated"
             value={tagDraft}
             placeholder="tags, comma, separated"
             onChange={(e) => setTagDraft(e.target.value)}

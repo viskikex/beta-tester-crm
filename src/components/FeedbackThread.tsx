@@ -103,6 +103,7 @@ export default function FeedbackThread({ feedbackId }: { feedbackId: string }) {
           <form onSubmit={post} className="row tight">
             <input
               className="grow"
+              aria-label="Write a reply"
               placeholder="Write a reply…"
               maxLength={10000}
               value={body}

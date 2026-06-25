@@ -11,7 +11,9 @@ Two tools in one app, gated by role:
   screenshot upload), edit or withdraw it before triage, reply in a thread, and
   watch the status of their own submissions.
 
-Built for the "run the beta program" half of the GAIN Power role. React + Supabase.
+I built this security-first: the access rules live in the database (Postgres RLS), not
+just the React UI, so the same boundary holds whether you go through the app or hit the
+API directly. React + Supabase.
 
 ## What it demonstrates
 
@@ -34,7 +36,11 @@ Security model (the headline — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.
   triage. Guarded twice: `safeUrl()` on render (`src/lib/safeUrl.ts`) **and** a DB `CHECK`
   constraint so the rule survives a direct anon-key write (`0004`).
 - **`SECURITY DEFINER` hardening** — pinned `search_path` + `REVOKE EXECUTE … FROM PUBLIC`
-  on every helper, clearing the Supabase security-advisor warnings (`0003`).
+  on every helper (`0003`). `is_admin()` and `merge_feedback()` are then granted back
+  to `authenticated` on purpose: the policies evaluate `is_admin()` as the signed-in
+  user, and `merge_feedback()` is the admin triage RPC. Supabase's linter still lists
+  those two as "executable by signed-in users," which is expected, not a miss. Both
+  re-check authorization internally, so calling them directly leaks nothing.
 - **Atomic, server-enforced merge** — duplicate-merging is one `SECURITY DEFINER` RPC
   (`0010`) that re-checks admin + canonical-target and does both writes in a single
   transaction, so a partial failure can't corrupt the dedup tree (and the no-cycle rule
@@ -116,22 +122,40 @@ For the full data model and the layered RLS story, see [`docs/ARCHITECTURE.md`](
 Two layers, matching the two halves of the app:
 
 - **Unit (frontend):** `npm test` (vitest) covers the pure boundary helpers — the `http(s)` URL allowlist, the storage-path extension sanitizer + id generator, and the PostgREST embed-shape coercion.
-- **RLS / policy (database):** [`supabase/tests/rls_smoke.sql`](supabase/tests/rls_smoke.sql) asserts the access-rule invariants from [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) *directly against Postgres* — a tester sees only their own feedback, can't submit a pre-triaged row or self-promote one, can't merge or flip `is_admin`, anon sees nothing, and the value constraints hold. It simulates signed-in users via `request.jwt.claims` + `SET ROLE`, runs inside a transaction that **rolls back** (persists nothing), and emits only PASS/FAIL (no PII). Run it against a **dev** project:
+- **RLS / policy (database):** [`supabase/tests/rls_smoke.sql`](supabase/tests/rls_smoke.sql) asserts the access-rule invariants from [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) *directly against Postgres* — a tester sees only their own feedback, can't submit a pre-triaged row or self-promote one, can't merge or flip `is_admin`; testers and their screenshots stay private to their owner (the CRM tables have no admin override); comments are append-only; anon sees nothing; and the value constraints hold. It simulates signed-in users via `request.jwt.claims` + `SET ROLE`, runs inside a transaction that **rolls back** (persists nothing), and emits only PASS/FAIL (no PII). Run it against a **dev** project:
 
   ```bash
   psql "$DATABASE_URL" -f supabase/tests/rls_smoke.sql
   # …or paste it into the Supabase SQL Editor and Run.
   ```
 
-- **Both, in CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the unit tests + build, then stands up the real `supabase/postgres` image, applies all 11 migrations in order, seeds an admin + a tester, and runs `rls_smoke.sql` against it — **on every push**. So the eight access-rule invariants above are proven green on each commit, not just claimed. The CI-only database setup (the storage schema, role grants, and seed that a hosted Supabase project provides but the bare image doesn't) lives in [`supabase/ci/`](supabase/ci/).
+- **Both, in CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the unit tests + build, then stands up the real `supabase/postgres` image, applies all 11 migrations in order, seeds an admin + a tester, and runs `rls_smoke.sql` against it — **on every push**. So the access-rule invariants above are proven green on each commit, not just claimed. The CI-only database setup (the storage schema, role grants, and seed that a hosted Supabase project provides but the bare image doesn't) lives in [`supabase/ci/`](supabase/ci/).
 
 ## Ideas to extend
 
 - Realtime on `feedback` so the triage board updates live as testers submit.
 - Email the submitter when their item ships (Edge Function on status change).
-- An LLM pass to auto-suggest tags from the body (the "AI-assisted" part of the JD).
+- An LLM pass to auto-suggest tags from the body.
 - Tie a feedback item back to a CRM `tester` record when emails match.
 - Pagination / "load more" on the triage and tester lists (today they fetch all visible rows).
+
+## Known limitations
+
+Scoping calls I made on purpose, not things I missed:
+
+- **No pagination yet.** The list and dashboard views pull every visible row on mount.
+  That's fine at demo scale. A real deployment wants range pagination or a "load more,"
+  and it's the first thing I'd add.
+- **Multi-admin edits are last-write-wins.** The optimistic-update guards protect you
+  from your own in-flight races, but if two admins edit the same feedback row at once,
+  the second save wins silently. There's no `updated_at` precondition.
+- **Admin promotion is SQL-only.** There's no in-app button to make someone an admin,
+  and that's deliberate: the `profiles` table has no write policy, so admin can't be
+  granted (or self-granted) through the API. You flip `is_admin` in the SQL editor.
+- **Screenshot cleanup is best-effort.** If a storage delete fails, the object can
+  orphan. There's no garbage collector.
+- **Deleting a canonical feedback item un-merges its duplicates.** They fall back to
+  standalone (`on delete set null`) rather than re-parenting to another item.
 
 ## License
 

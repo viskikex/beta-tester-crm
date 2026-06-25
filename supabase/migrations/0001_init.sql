@@ -12,11 +12,11 @@ create table if not exists public.testers (
   id           uuid primary key default gen_random_uuid(),
   name         text not null,
   email        text not null,
-  role         text,          -- e.g. "Campaign Manager", "Field Director"
+  role         text,          -- e.g. "PM", "Engineer", "Designer"
   organization text,
   status       text not null default 'prospect'
                check (status in ('prospect','invited','active','inactive')),
-  source       text,          -- how we found them (referral, RootsCamp, etc.)
+  source       text,          -- how we found them (referral, conference, etc.)
   notes        text,
   owner        uuid not null references auth.users (id) on delete cascade,
   created_at   timestamptz not null default now()

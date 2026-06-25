@@ -76,7 +76,7 @@ export default function TestersPage() {
         </button>
       </div>
 
-      {actionError && <p className="error">{actionError}</p>}
+      {actionError && <p className="error" role="alert">{actionError}</p>}
       {loadError && (
         <p className="error" role="alert">Couldn't load testers: {loadError}</p>
       )}
@@ -116,6 +116,7 @@ export default function TestersPage() {
                       {t.organization ? ` · ${t.organization}` : ""}
                     </div>
                     <select
+                      aria-label={`Status for ${t.name}`}
                       value={t.status}
                       onChange={(e) => moveStatus(t, e.target.value as TesterStatus)}
                     >
@@ -174,16 +175,18 @@ function AddTesterForm({
 
   return (
     <form onSubmit={submit} className="inline-form">
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       <div className="row">
         <input
           placeholder="Name"
+          aria-label="Tester name"
           required
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
         />
         <input
           placeholder="Email"
+          aria-label="Tester email"
           type="email"
           required
           value={form.email}
@@ -192,19 +195,22 @@ function AddTesterForm({
       </div>
       <div className="row">
         <input
-          placeholder="Role (e.g. Field Director)"
+          placeholder="Role (e.g. PM)"
+          aria-label="Tester role"
           value={form.role}
           onChange={(e) => setForm({ ...form, role: e.target.value })}
         />
         <input
           placeholder="Organization"
+          aria-label="Tester organization"
           value={form.organization}
           onChange={(e) => setForm({ ...form, organization: e.target.value })}
         />
       </div>
       <div className="row">
         <input
-          placeholder="Source (referral, RootsCamp…)"
+          placeholder="Source (referral, conference…)"
+          aria-label="Tester source"
           value={form.source}
           onChange={(e) => setForm({ ...form, source: e.target.value })}
         />

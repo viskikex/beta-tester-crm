@@ -43,6 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(
       ({ data }) => {
         setSession(data.session);
+        // If a session already exists, a profile fetch is imminent (the [userId]
+        // effect below). Mark profileLoading now, in the same render that flips
+        // `loading` off, so the route guards don't read the not-yet-fetched
+        // profile as isAdmin=false in the gap and bounce an admin to /my-feedback.
+        setProfileLoading(!!data.session);
         setLoading(false);
       },
       (err) => {
@@ -53,6 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
+      // Same reason as above: a new session means a profile fetch is coming, so
+      // don't let the guards see a stale/absent profile as "not admin" meanwhile.
+      if (s) setProfileLoading(true);
     });
 
     return () => sub.subscription.unsubscribe();

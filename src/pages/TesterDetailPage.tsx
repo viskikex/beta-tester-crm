@@ -134,8 +134,8 @@ function ScheduleSessionForm({
   return (
     <>
       <form onSubmit={submit} className="row tight">
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+        <input aria-label="Session date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input aria-label="Session time" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
         <button type="submit" disabled={saving || !date || !time}>
           Schedule
         </button>
@@ -175,6 +175,7 @@ function SessionStatusControl({
   return (
     <>
       <select
+        aria-label="Session status"
         value={session.status}
         disabled={saving}
         onChange={(e) => change(e.target.value)}
