@@ -15,7 +15,9 @@ export default function AdminFeedbackPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"" | FeedbackStatus>("");
   const [tagFilter, setTagFilter] = useState("");
-  const [actionError, setActionError] = useState<string | null>(null);
+  // Carries the feedback id the error belongs to, so it renders on that card
+  // rather than at the top of a long list (out of view from the control touched).
+  const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [allTags, setAllTags] = useState<string[]>([]);
 
@@ -106,7 +108,7 @@ export default function AdminFeedbackPage() {
           )
         );
       }
-      setActionError(`Couldn't update status: ${error.message}`);
+      setActionError({ id, message: `Couldn't update status: ${error.message}` });
     }
   }
 
@@ -125,21 +127,21 @@ export default function AdminFeedbackPage() {
           )
         );
       }
-      setActionError(`Couldn't update tags: ${error.message}`);
+      setActionError({ id, message: `Couldn't update tags: ${error.message}` });
     }
   }
 
   async function mergeInto(id: string, targetId: string) {
     setActionError(null);
     if (id === targetId) {
-      setActionError("Can't merge an item into itself.");
+      setActionError({ id, message: "Can't merge an item into itself." });
       return;
     }
     // The target must be canonical. Rejecting a merged target also blocks
     // merging into one of this item's own duplicates (which would be a cycle).
     const target = all.find((f) => f.id === targetId);
     if (target?.merged_into) {
-      setActionError("That target is itself merged. Pick a canonical submission.");
+      setActionError({ id, message: "That target is itself merged. Pick a canonical submission." });
       return;
     }
     // Single atomic RPC (migration 0010): it points id at target AND reparents
@@ -150,17 +152,20 @@ export default function AdminFeedbackPage() {
       src: id,
       target: targetId,
     });
-    if (error) setActionError(`Couldn't merge: ${error.message}`);
+    if (error) setActionError({ id, message: `Couldn't merge: ${error.message}` });
     load();
   }
 
   async function unmerge(id: string) {
     setActionError(null);
+    // The unmerge control lives on the canonical card; attribute the error there.
+    const parentId = all.find((f) => f.id === id)?.merged_into ?? id;
     const { error } = await supabase
       .from("feedback")
       .update({ merged_into: null })
       .eq("id", id);
-    if (error) setActionError(`Couldn't unmerge: ${error.message}`);
+    if (error)
+      setActionError({ id: parentId, message: `Couldn't unmerge: ${error.message}` });
     load();
   }
 
@@ -196,7 +201,6 @@ export default function AdminFeedbackPage() {
         </div>
       </div>
 
-      {actionError && <p className="error" role="alert">{actionError}</p>}
       {loadError && (
         <p className="error" role="alert">Couldn't load feedback: {loadError}</p>
       )}
@@ -211,6 +215,7 @@ export default function AdminFeedbackPage() {
             <FeedbackCard
               key={f.id}
               fb={f}
+              error={actionError?.id === f.id ? actionError.message : null}
               dupes={dupesByTarget.get(f.id) ?? []}
               mergeTargets={mergeTargets.filter((t) => t.id !== f.id)}
               onStatus={setStatus}
@@ -233,6 +238,7 @@ function FeedbackCard({
   onTags,
   onMerge,
   onUnmerge,
+  error,
 }: {
   fb: Feedback;
   dupes: Feedback[];
@@ -241,6 +247,7 @@ function FeedbackCard({
   onTags: (id: string, tags: string[]) => void;
   onMerge: (id: string, targetId: string) => void;
   onUnmerge: (id: string) => void;
+  error?: string | null;
 }) {
   const [tagDraft, setTagDraft] = useState(fb.tags.join(", "));
 
@@ -290,6 +297,7 @@ function FeedbackCard({
         </div>
       )}
 
+      {error && <p className="error" role="alert">{error}</p>}
       <div className="fb-actions">
         <label className="inline-label">
           status
