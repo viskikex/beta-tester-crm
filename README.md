@@ -86,6 +86,7 @@ Vite + React 18 + TypeScript, `@supabase/supabase-js`, `react-router-dom`. Plain
    - `0010_merge_feedback_rpc.sql` — `SECURITY DEFINER` RPC that merges duplicates atomically
    - `0011_value_constraints.sql` — server-side value `CHECK`s (non-empty/length-capped body, email format)
    - `0012_feedback_merge_guard.sql` — trigger so the merge invariants hold for a direct admin write, not just the RPC
+   - `0013_rls_initplan.sql` — wrap `auth.uid()`/`is_admin()` in `(select …)` so each policy evaluates them once per query, not once per row
    > `0004` will fail if a row already holds a non-http `screenshot_url` — clean those first.
    > `0010` is required for duplicate-merging — the triage UI calls it via `supabase.rpc('merge_feedback')`, so merge errors until this is applied.
 3. **Env vars:** `cp .env.example .env`, then fill in URL + anon key (Settings → API).
