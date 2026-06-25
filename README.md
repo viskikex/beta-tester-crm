@@ -44,7 +44,9 @@ Security model (the headline — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.
 - **Atomic, server-enforced merge** — duplicate-merging is one `SECURITY DEFINER` RPC
   (`0010`) that re-checks admin + canonical-target and does both writes in a single
   transaction, so a partial failure can't corrupt the dedup tree (and the no-cycle rule
-  isn't just client-side).
+  isn't just client-side). A `BEFORE UPDATE` trigger (`0012`) re-asserts the same
+  no-self-merge and canonical-target rules at the table, so they hold even against a
+  direct admin `UPDATE` that bypasses the RPC.
 - **Validation at the DB boundary** — non-empty, length-capped feedback bodies and an
   email-format check live as `CHECK` constraints (`0011`), so "integrity is the database's
   job" holds against a direct anon-key write, not only the React forms.
@@ -83,6 +85,7 @@ Vite + React 18 + TypeScript, `@supabase/supabase-js`, `react-router-dom`. Plain
    - `0009_feedback_edit_column_lock.sql` — trigger so admin-tagging a `new` item can't brick a tester's edit
    - `0010_merge_feedback_rpc.sql` — `SECURITY DEFINER` RPC that merges duplicates atomically
    - `0011_value_constraints.sql` — server-side value `CHECK`s (non-empty/length-capped body, email format)
+   - `0012_feedback_merge_guard.sql` — trigger so the merge invariants hold for a direct admin write, not just the RPC
    > `0004` will fail if a row already holds a non-http `screenshot_url` — clean those first.
    > `0010` is required for duplicate-merging — the triage UI calls it via `supabase.rpc('merge_feedback')`, so merge errors until this is applied.
 3. **Env vars:** `cp .env.example .env`, then fill in URL + anon key (Settings → API).

@@ -18,6 +18,8 @@
 --               another tester's thread; comments are append-only (no UPDATE/DELETE).
 --   storage   — the screenshots bucket is per-user-folder scoped: a tester sees and
 --               uploads only under their own <uid>/ folder, admins read all, anon none.
+--   merge     — the dedup invariants (no self-merge, canonical-only target, hence no
+--               cycles) hold for a DIRECT admin UPDATE, not just the merge_feedback RPC.
 --
 -- SAFETY: everything runs inside one transaction that ROLLS BACK at the end —
 -- it never persists a row. It looks up the principals INTERNALLY and emits
@@ -44,6 +46,9 @@ declare
   v_crm_row uuid;   -- a CRM tester row owned by the tester
   v_session uuid;   -- a session owned by the tester
   v_comment uuid;   -- a comment by the tester on their own feedback
+  v_mga     uuid;   -- two admin-owned canonical rows, for the merge-guard tests
+  v_mgb     uuid;
+  ok        boolean;
   v_cnt     int;
 begin
   -- ---- fixtures (created as the privileged session user; ids stay internal) ----
@@ -309,6 +314,38 @@ begin
   exception when insufficient_privilege then
     raise notice 'PASS 14f: anon denied on storage (fails closed, %)', sqlstate;
   end;
+
+  -- ===================== MERGE GUARD (0012), as ADMIN =====================
+  -- The no-self-merge / canonical-only-target invariants hold for a DIRECT admin
+  -- UPDATE, not just inside the merge_feedback RPC. (ok-flag pattern so a silently
+  -- allowed write can't be misread as the guard's own raise.)
+  execute 'reset role';
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_admin::text, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  insert into public.feedback (submitted_by, type, body)
+    values (v_admin, 'bug', 'rls-smoke: merge A') returning id into v_mga;
+  insert into public.feedback (submitted_by, type, body)
+    values (v_admin, 'bug', 'rls-smoke: merge B') returning id into v_mgb;
+
+  -- 15a. POSITIVE CONTROL: a direct merge into a canonical target is allowed.
+  update public.feedback set merged_into = v_mgb where id = v_mga;
+  raise notice 'PASS 15a: admin direct merge into a canonical target allowed';
+
+  -- 15b. A cycle (target points back at the now-merged row) is rejected.
+  begin
+    update public.feedback set merged_into = v_mga where id = v_mgb; ok := true;
+  exception when others then ok := false; end;
+  if ok then raise exception 'FAIL 15b: merge cycle was allowed'; end if;
+  raise notice 'PASS 15b: direct-UPDATE merge cycle blocked by guard';
+
+  -- 15c. A self-loop is rejected.
+  begin
+    update public.feedback set merged_into = v_mgb where id = v_mgb; ok := true;
+  exception when others then ok := false; end;
+  if ok then raise exception 'FAIL 15c: self-merge was allowed'; end if;
+  raise notice 'PASS 15c: direct-UPDATE self-merge blocked by guard';
 
   execute 'reset role';
   raise notice 'rls_smoke: ALL PASS';
