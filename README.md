@@ -16,9 +16,9 @@ API directly. React + Supabase.
 
 ## How this was built
 
-I'm a beginner this was built with Claude, not by writing it myself. 
+I'm a beginner. This was built with Claude, not by writing it myself. 
 The goals, the security first methods, and the "okay, now try to break it"
-prompting. I reviewed and iterated as it went, but Claude wrote most of the code.
+prompting were mine. I reviewed and iterated as it went, but Claude wrote most of the code.
 I couldn't have written the recursion-safe RLS on my own yet. This was me poking at how far a
 clear goal and (hopefully) careful prompting could get, while learning claude code.
 
@@ -173,7 +173,7 @@ Two layers, one per half of the app:
 
 ## Known limitations
 
-Scoping calls I made on purpose, not things I missed:
+Scoping calls I made on purpose:
 
 - **No pagination yet.** The list and dashboard views pull every visible row on mount.
   That's fine at demo scale. A real deployment wants range pagination or a "load more,"
