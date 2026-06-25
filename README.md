@@ -73,7 +73,7 @@ Vite + React 18 + TypeScript, `@supabase/supabase-js`, `react-router-dom`. Plain
 ## Setup
 
 1. **Create a Supabase project** at [supabase.com](https://supabase.com).
-2. **Run the migrations in order** (`0001` → `0011`), in the SQL Editor:
+2. **Run the migrations in order** (`0001` → `0013`), in the SQL Editor:
    - `0001_init.sql` — testers + sessions
    - `0002_feedback_portal.sql` — profiles, roles, feedback
    - `0003_harden_functions.sql` — `search_path` + EXECUTE hardening
@@ -133,7 +133,7 @@ Two layers, matching the two halves of the app:
   # …or paste it into the Supabase SQL Editor and Run.
   ```
 
-- **Both, in CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the unit tests + build, then stands up the real `supabase/postgres` image, applies all 11 migrations in order, seeds an admin + a tester, and runs `rls_smoke.sql` against it — **on every push**. So the access-rule invariants above are proven green on each commit, not just claimed. The CI-only database setup (the storage schema, role grants, and seed that a hosted Supabase project provides but the bare image doesn't) lives in [`supabase/ci/`](supabase/ci/).
+- **Both, in CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the unit tests + build, then stands up the real `supabase/postgres` image, applies all 13 migrations in order, seeds an admin + two testers, and runs `rls_smoke.sql` against it — **on every push**. So the access-rule invariants above are proven green on each commit, not just claimed. The CI-only database setup (the storage schema, role grants, and seed that a hosted Supabase project provides but the bare image doesn't) lives in [`supabase/ci/`](supabase/ci/).
 
 ## Ideas to extend
 
