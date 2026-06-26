@@ -14,10 +14,14 @@ I built this security-first. The access rules live in the database as Postgres R
 only in the React UI, so the same boundary holds whether you go through the app or hit the
 API directly. React + Supabase.
 
+[![Program dashboard](docs/img/02-dashboard.png)](docs/img/02-dashboard.png)
+
+<sub>Admin program dashboard — pipeline counts, new-feedback volume, upcoming sessions. More views in [Screenshots](#screenshots).</sub>
+
 ## How this was built
 
-I'm a beginner. This was built with Claude, not by writing it myself. 
-The goals, the security first methods, and the "okay, now try to break it"
+I'm a beginner. This was built with Claude, not by writing it myself.
+The goals, the security-first approach, and the "okay, now try to break it"
 prompting were mine. I reviewed and iterated as it went, but Claude wrote most of the code.
 I couldn't have written the recursion-safe RLS on my own yet. This was me poking at how far a
 clear goal and (hopefully) careful prompting could get, while learning claude code.
@@ -79,6 +83,19 @@ Platform pieces:
   narrowing the board doesn't ship the whole table to the browser.
 - **A pipeline UI** with optimistic updates that roll back on error, plus client-side
   aggregation for the dashboard.
+
+## Screenshots
+
+Same Supabase project, two role-gated surfaces. The tester only ever sees their own
+submissions — that's RLS in the database, not a filtered query in the UI.
+
+| Admin · triage board | Admin · tester pipeline |
+|:--:|:--:|
+| [![Triage board](docs/img/05-triage.png)](docs/img/05-triage.png) | [![Tester pipeline](docs/img/03-testers.png)](docs/img/03-testers.png) |
+| Set status, tag, and merge duplicates. | Recruitment kanban: prospect → invited → active → inactive. |
+| **Admin · tester detail** | **Tester · submit & track** |
+| [![Tester detail](docs/img/04-tester-detail.png)](docs/img/04-tester-detail.png) | [![My feedback](docs/img/06-my-feedback.png)](docs/img/06-my-feedback.png) |
+| Schedule and log feedback sessions per contact. | The tester's whole world: submit, then watch status. Note they see *only* their own rows. |
 
 ## Stack
 
