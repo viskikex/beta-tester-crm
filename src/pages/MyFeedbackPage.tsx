@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
-import { FEEDBACK_TYPES, type Feedback, type FeedbackType } from "../lib/types";
+import { FEEDBACK_TYPES, type Feedback, type FeedbackType, toFeedbackType } from "../lib/types";
 import { uploadScreenshot, removeScreenshot } from "../lib/uploadScreenshot";
 import FeedbackThread from "../components/FeedbackThread";
 import ScreenshotLink from "../components/ScreenshotLink";
@@ -37,7 +37,7 @@ export default function MyFeedbackPage() {
       setItems([]);
     } else {
       setListError(null);
-      setItems((data as Feedback[]) ?? []);
+      setItems(data ?? []);
     }
     setLoading(false);
   }
@@ -103,7 +103,7 @@ export default function MyFeedbackPage() {
         <div className="row">
           <label className="grow">
             Type
-            <select value={type} onChange={(e) => setType(e.target.value as FeedbackType)}>
+            <select value={type} onChange={(e) => setType(toFeedbackType(e.target.value))}>
               {FEEDBACK_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -238,7 +238,7 @@ function SubmissionItem({
           <div className="row">
             <label className="grow">
               Type
-              <select value={type} onChange={(e) => setType(e.target.value as FeedbackType)}>
+              <select value={type} onChange={(e) => setType(toFeedbackType(e.target.value))}>
                 {FEEDBACK_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {t}

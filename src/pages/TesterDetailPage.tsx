@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
-import type { Session, Tester } from "../lib/types";
+import { SessionStatus, type Session, type Tester, toSessionStatus } from "../lib/types";
 
 export default function TesterDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -155,7 +155,7 @@ function SessionStatusControl({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  async function change(status: string) {
+  async function change(status: SessionStatus) {
     setError(null);
     setSaving(true);
     const { error } = await supabase
@@ -178,7 +178,7 @@ function SessionStatusControl({
         aria-label="Session status"
         value={session.status}
         disabled={saving}
-        onChange={(e) => change(e.target.value)}
+        onChange={(e) => change(toSessionStatus(e.target.value))}
       >
         <option value="scheduled">scheduled</option>
         <option value="completed">completed</option>

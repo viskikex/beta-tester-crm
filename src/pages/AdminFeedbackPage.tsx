@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { PAGE_SIZE } from "../lib/constants";
 import {
   FEEDBACK_STATUSES,
   type Feedback,
   type FeedbackStatus,
+  toFeedbackStatus,
 } from "../lib/types";
 import FeedbackThread from "../components/FeedbackThread";
 import ScreenshotLink from "../components/ScreenshotLink";
@@ -15,6 +17,8 @@ export default function AdminFeedbackPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"" | FeedbackStatus>("");
   const [tagFilter, setTagFilter] = useState("");
+  const [page, setPage] = useState(0);
+  const [count, setCount] = useState(0);
   // Carries the feedback id the error belongs to, so it renders on that card
   // rather than at the top of a long list (out of view from the control touched).
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
@@ -25,21 +29,26 @@ export default function AdminFeedbackPage() {
     setLoading(true);
     let query = supabase
       .from("feedback")
-      .select("*, submitter:profiles(email)")
+      .select("*, submitter:profiles(email)", { count: "exact" })
       .order("created_at", { ascending: false });
     // Filters run at the database. The tag filter goes through the GIN index on
     // feedback.tags via .contains() (tags @> ARRAY[tag]) rather than being applied
     // in the browser — so triage scales past what's comfortable to ship to the client.
     if (statusFilter) query = query.eq("status", statusFilter);
     if (tagFilter) query = query.contains("tags", [tagFilter]);
-    const { data, error } = await query;
+    const { data, error, count } = await query.range(
+      page * PAGE_SIZE,
+      (page + 1) * PAGE_SIZE - 1
+    );
     if (error) {
       setLoadError(error.message);
       setAll([]);
+      setCount(0);
     } else {
       setLoadError(null);
+      setCount(count ?? 0);
       setAll(
-        ((data as Feedback[]) ?? []).map((f) => ({
+        (data ?? []).map((f) => ({
           ...f,
           submitter: one(f.submitter),
         }))
@@ -48,11 +57,16 @@ export default function AdminFeedbackPage() {
     setLoading(false);
   }
 
-  // Re-query when a filter changes — the narrowing happens server-side.
+  // Reset page whenever a filter changes so page 3 doesn't request an empty range.
+  useEffect(() => {
+    setPage(0);
+  }, [statusFilter, tagFilter]);
+
+  // Re-query when a filter or page changes — the narrowing happens server-side.
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, tagFilter]);
+  }, [statusFilter, tagFilter, page]);
 
   // Tag vocabulary for the filter dropdown — fetched once and kept stable, so
   // picking a tag (which narrows the feedback query) doesn't also shrink the set
@@ -61,9 +75,7 @@ export default function AdminFeedbackPage() {
     (async () => {
       const { data } = await supabase.from("feedback").select("tags");
       const s = new Set<string>();
-      ((data as { tags: string[] }[]) ?? []).forEach((r) =>
-        r.tags?.forEach((t) => s.add(t))
-      );
+      (data ?? []).forEach((r) => r.tags.forEach((t) => s.add(t)));
       setAllTags([...s].sort());
     })();
   }, []);
@@ -226,6 +238,24 @@ export default function AdminFeedbackPage() {
           ))}
         </ul>
       )}
+
+      <div className="row tight pagination">
+        <button
+          type="button"
+          onClick={() => setPage((p) => p - 1)}
+          disabled={page === 0 || loading}
+        >
+          Previous
+        </button>
+        <span className="muted small">Page {page + 1}</span>
+        <button
+          type="button"
+          onClick={() => setPage((p) => p + 1)}
+          disabled={(page + 1) * PAGE_SIZE >= count || loading}
+        >
+          Next
+        </button>
+      </div>
     </section>
   );
 }
@@ -303,7 +333,7 @@ function FeedbackCard({
           status
           <select
             value={fb.status}
-            onChange={(e) => onStatus(fb.id, e.target.value as FeedbackStatus)}
+            onChange={(e) => onStatus(fb.id, toFeedbackStatus(e.target.value))}
           >
             {FEEDBACK_STATUSES.map((s) => (
               <option key={s} value={s}>

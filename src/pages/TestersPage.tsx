@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
-import { TESTER_STATUSES, type Tester, type TesterStatus } from "../lib/types";
+import { PAGE_SIZE } from "../lib/constants";
+import {
+  TESTER_STATUSES,
+  type Tester,
+  type TesterStatus,
+  toTesterStatus,
+} from "../lib/types";
 
 export default function TestersPage() {
   const { user } = useAuth();
@@ -12,27 +18,33 @@ export default function TestersPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [highlighted, setHighlighted] = useState<TesterStatus | null>(null);
+  const [page, setPage] = useState(0);
+  const [count, setCount] = useState(0);
   const location = useLocation();
 
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error, count } = await supabase
       .from("testers")
-      .select("*")
-      .order("created_at", { ascending: false });
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
     if (error) {
       setLoadError(error.message);
       setTesters([]);
+      setCount(0);
     } else {
       setLoadError(null);
-      setTesters((data as Tester[]) ?? []);
+      setCount(count ?? 0);
+      setTesters(data ?? []);
     }
     setLoading(false);
   }
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   // Deep-link from the dashboard status cards: /testers#status-active scrolls to
   // that pipeline column and flashes it so the landing spot is obvious.
@@ -51,17 +63,17 @@ export default function TestersPage() {
 
   async function moveStatus(t: Tester, status: TesterStatus) {
     // Optimistic, then persist. On failure revert ONLY this card's status (not a
-    // whole-array snapshot, which would discard any other card the user moved
-    // meanwhile), and only if it's still the value we set — so a stale failure
-    // can't undo a newer move of the same card.
-    setActionError(null);
-    setTesters((cur) => cur.map((x) => (x.id === t.id ? { ...x, status } : x)));
-    const { error } = await supabase.from("testers").update({ status }).eq("id", t.id);
+    // whole-array snapshot) so other edits in flight don't get clobbered.
+    setTesters((cur) =>
+      cur.map((x) => (x.id === t.id ? { ...x, status } : x))
+    );
+    const { error } = await supabase
+      .from("testers")
+      .update({ status })
+      .eq("id", t.id);
     if (error) {
       setTesters((cur) =>
-        cur.map((x) =>
-          x.id === t.id && x.status === status ? { ...x, status: t.status } : x
-        )
+        cur.map((x) => (x.id === t.id ? { ...x, status: t.status } : x))
       );
       setActionError(`Couldn't move ${t.name}: ${error.message}`);
     }
@@ -118,7 +130,7 @@ export default function TestersPage() {
                     <select
                       aria-label={`Status for ${t.name}`}
                       value={t.status}
-                      onChange={(e) => moveStatus(t, e.target.value as TesterStatus)}
+                      onChange={(e) => moveStatus(t, toTesterStatus(e.target.value))}
                     >
                       {TESTER_STATUSES.map((s) => (
                         <option key={s} value={s}>
@@ -134,6 +146,24 @@ export default function TestersPage() {
           })}
         </div>
       )}
+
+      <div className="row tight pagination">
+        <button
+          type="button"
+          onClick={() => setPage((p) => p - 1)}
+          disabled={page === 0 || loading}
+        >
+          Previous
+        </button>
+        <span className="muted small">Page {page + 1}</span>
+        <button
+          type="button"
+          onClick={() => setPage((p) => p + 1)}
+          disabled={(page + 1) * PAGE_SIZE >= count || loading}
+        >
+          Next
+        </button>
+      </div>
     </section>
   );
 }

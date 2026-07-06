@@ -20,18 +20,7 @@ API directly. React + Supabase.
 
 ## How this was built
 
-I'm a beginner. This was built with Claude, not by writing it myself.
-The goals, the security-first approach, and the "okay, now try to break it"
-prompting were mine. I reviewed and iterated as it went, but Claude wrote most of the code.
-I couldn't have written the recursion-safe RLS on my own yet. This was me poking at how far a
-clear goal and (hopefully) careful prompting could get, while learning claude code.
-
-A couple of things I'd do differently next time: keep a decision log from the start (this ran
-across many sessions, and I only thought to track the calls near the end, far too late to be
-useful), and keep scope in check, since it's easy to let the AI keep adding "one more thing."
-
-I'm not claiming to be an expert here, just curious and trying things. The part I'd point to is
-the checking, not the code: every access rule is adversarially tested and the RLS suite runs in CI.
+I built this with Claude Code as my editor. The security-first scope, the adversarial prompting, and the decision to keep access rules in Postgres RLS instead of only the UI were mine. I tested the boundaries by trying to break them; the code is the artifact, but the checking is the part I could actually do myself.
 
 ## What it demonstrates
 

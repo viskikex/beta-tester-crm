@@ -29,7 +29,7 @@ export default function FeedbackThread({ feedbackId }: { feedbackId: string }) {
       return;
     }
     setComments(
-      ((data as FeedbackComment[]) ?? []).map((c) => ({
+      (data ?? []).map((c) => ({
         ...c,
         author_profile: one(c.author_profile),
       }))

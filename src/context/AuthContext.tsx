@@ -92,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setProfileError(error.message);
             setProfile(null);
           } else {
-            setProfile((data as Profile) ?? null);
+            setProfile(data ?? null);
           }
           setProfileLoading(false);
         },

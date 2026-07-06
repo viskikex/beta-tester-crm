@@ -1,3 +1,8 @@
+import type { Database } from "./database";
+
+export type Tables<T extends keyof Database["public"]["Tables"]> =
+  Database["public"]["Tables"][T]["Row"];
+
 export type TesterStatus = "prospect" | "invited" | "active" | "inactive";
 export type SessionStatus = "scheduled" | "completed" | "no_show" | "canceled";
 
@@ -26,6 +31,55 @@ export const FEEDBACK_STATUSES: FeedbackStatus[] = [
   "declined",
 ];
 
+export function toFeedbackType(value: string): FeedbackType {
+  switch (value) {
+    case "bug":
+    case "confusion":
+    case "request":
+      return value;
+    default:
+      throw new Error(`Invalid feedback type: ${value}`);
+  }
+}
+
+export function toFeedbackStatus(value: string): FeedbackStatus {
+  switch (value) {
+    case "new":
+    case "triaged":
+    case "planned":
+    case "shipped":
+    case "declined":
+      return value;
+    default:
+      throw new Error(`Invalid feedback status: ${value}`);
+  }
+}
+
+export function toTesterStatus(value: string): TesterStatus {
+  switch (value) {
+    case "prospect":
+    case "invited":
+    case "active":
+    case "inactive":
+      return value;
+    default:
+      throw new Error(`Invalid tester status: ${value}`);
+  }
+}
+
+export function toSessionStatus(value: string): SessionStatus {
+  switch (value) {
+    case "scheduled":
+    case "completed":
+    case "no_show":
+    case "canceled":
+      return value;
+    default:
+      throw new Error(`Invalid session status: ${value}`);
+  }
+}
+
+
 export interface Profile {
   id: string;
   email: string | null;
@@ -33,55 +87,19 @@ export interface Profile {
   created_at: string;
 }
 
-export interface Feedback {
-  id: string;
-  submitted_by: string;
-  type: FeedbackType;
-  body: string;
-  screenshot_url: string | null;
-  // Storage object path in the private 'screenshots' bucket (new uploads).
-  // Legacy rows may still use screenshot_url instead.
-  screenshot_path: string | null;
-  status: FeedbackStatus;
-  tags: string[];
-  merged_into: string | null;
-  created_at: string;
-  updated_at: string;
+export type Feedback = Tables<"feedback"> & {
   // Joined in via select("*, submitter:profiles(email)")
   submitter?: Pick<Profile, "email"> | null;
-}
+};
 
-export interface FeedbackComment {
-  id: string;
-  feedback_id: string;
-  author: string;
-  body: string;
-  created_at: string;
+export type FeedbackComment = Tables<"feedback_comments"> & {
   // Joined in via select("*, author_profile:profiles(email)")
   author_profile?: Pick<Profile, "email"> | null;
-}
+};
 
 // ── CRM ────────────────────────────────────────────────────────
-export interface Tester {
-  id: string;
-  name: string;
-  email: string;
-  role: string | null;
-  organization: string | null;
-  status: TesterStatus;
-  source: string | null;
-  notes: string | null;
-  owner: string;
-  created_at: string;
-}
+export type Tester = Tables<"testers">;
 
-export interface Session {
-  id: string;
-  tester_id: string;
-  scheduled_at: string;
-  status: SessionStatus;
-  notes: string | null;
-  owner: string;
-  created_at: string;
+export type Session = Tables<"sessions"> & {
   tester?: Pick<Tester, "id" | "name"> | null;
-}
+};
